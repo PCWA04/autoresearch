@@ -18,7 +18,7 @@ function sendJson(res, statusCode, payload) {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
   });
   res.end(JSON.stringify(payload));
 }
@@ -732,6 +732,14 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/jobs") {
       const body = await readJson(req);
+      if (!body?.id) {
+        sendJson(res, 400, { error: "job id is required" });
+        return;
+      }
+      if (jobs.some((job) => job.id === body.id)) {
+        sendJson(res, 409, { error: "job id already exists" });
+        return;
+      }
       jobs.push(body);
       await persistJobs();
       sendJson(res, 201, body);
@@ -741,6 +749,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "PUT" && url.pathname.startsWith("/api/jobs/")) {
       const id = url.pathname.split("/").pop();
       const body = await readJson(req);
+      if (!jobs.some((job) => job.id === id)) {
+        sendJson(res, 404, { error: "job not found" });
+        return;
+      }
       jobs = jobs.map((job) => job.id === id ? { ...job, ...body } : job);
       await persistJobs();
       sendJson(res, 200, jobs.find((job) => job.id === id));
@@ -749,6 +761,10 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "DELETE" && url.pathname.startsWith("/api/jobs/")) {
       const id = url.pathname.split("/").pop();
+      if (!jobs.some((job) => job.id === id)) {
+        sendJson(res, 404, { error: "job not found" });
+        return;
+      }
       jobs = jobs.filter((job) => job.id !== id);
       await persistJobs();
       sendJson(res, 200, { ok: true, id });
