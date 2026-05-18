@@ -1,7 +1,7 @@
 import { seedJobs, providers } from "./data.js";
 
 const STORAGE_KEY = "weekly-report-manager.jobs";
-const APP_VERSION = "v0.7";
+const APP_VERSION = "v0.8";
 const API_BASE_URL = "http://localhost:8787";
 
 function clone(value) {
@@ -232,7 +232,7 @@ function renderWorkspace(selectedJob) {
                 </div>
                 <div class="status-row">
                   <span>Email</span>
-                  <strong>${state.running ? "待寄送" : "已寄送"}</strong>
+                  <strong>${state.running ? "待寄送" : selectedJob.emailSentAt ? "已寄送" : "待寄送"}</strong>
                 </div>
                 <div class="status-row">
                   <span>保留紀錄</span>
@@ -517,6 +517,10 @@ async function pollResearch(selectedJob, provider, id) {
       persistJobs();
       render();
       await createDocumentForReport(selectedJob);
+      state.runStatus = "寄送 Email 中";
+      persistJobs();
+      render();
+      await sendReportEmail(selectedJob);
       persistJobs();
       render();
       return;
@@ -565,6 +569,35 @@ async function createDocumentForReport(selectedJob) {
   const doc = await response.json();
   selectedJob.googleDocId = doc.documentId;
   selectedJob.googleDocUrl = doc.url;
+}
+
+async function sendReportEmail(selectedJob) {
+  const response = await fetch(`${API_BASE_URL}/api/email`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      to: selectedJob.recipient,
+      subject: `${selectedJob.name} 已完成`,
+      body: [
+        `${selectedJob.name} 已完成。`,
+        "",
+        "Google Doc 連結：",
+        selectedJob.googleDocUrl,
+      ].join("\n"),
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    throw new Error(errorBody.error || `寄送 Email 失敗 (${response.status})`);
+  }
+
+  const message = await response.json();
+  selectedJob.emailMessageId = message.id;
+  selectedJob.emailSentAt = new Date().toISOString();
+  selectedJob.sentCount = 1;
   state.runStatus = "研究完成";
 }
 
