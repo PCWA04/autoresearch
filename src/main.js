@@ -494,7 +494,10 @@ async function handleToggle() {
 
 async function handleDelete() {
   const selectedJob = getSelectedJob();
-  await fetch(`${API_BASE_URL}/api/jobs/${selectedJob.id}`, { method: "DELETE" });
+  const response = await fetch(`${API_BASE_URL}/api/jobs/${selectedJob.id}`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(`刪除任務失敗 (${response.status})`);
+  }
   jobs = jobs.filter((job) => job.id !== selectedJob.id);
   state.selectedJobId = jobs[0]?.id ?? null;
   state.running = false;
