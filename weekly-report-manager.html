@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>週報管理工具</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --ink: #17202a;
+      --muted: #637381;
+      --line: #dfe4ea;
+      --accent: #146c94;
+      --accent-soft: #e8f3f8;
+      --success: #16794c;
+      --warning: #a15c00;
+      --danger: #b42318;
+      --shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, "Noto Sans TC", sans-serif;
+      font-size: 14px;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: 56px 1fr;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .brand-mark {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      padding: 0 12px;
+      color: var(--ink);
+      cursor: pointer;
+    }
+
+    button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .sidebar,
+    .workspace {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .sidebar {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: calc(100vh - 88px);
+    }
+
+    .sidebar-head,
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .sidebar-head h2,
+    .section-head h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .task-list {
+      padding: 8px;
+      display: grid;
+      align-content: start;
+      gap: 8px;
+    }
+
+    .task {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    .task.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .task-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .badge.success {
+      color: var(--success);
+      background: #eaf7f0;
+    }
+
+    .badge.warning {
+      color: var(--warning);
+      background: #fff3e3;
+    }
+
+    .meta {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+    }
+
+    .overview {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .metric-value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: minmax(420px, 1.2fr) minmax(320px, 0.8fr);
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .panel-body {
+      padding: 16px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      font: inherit;
+    }
+
+    input,
+    select {
+      height: 38px;
+      padding: 0 10px;
+    }
+
+    textarea {
+      min-height: 150px;
+      padding: 10px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .inline-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .inline-row input {
+      flex: 1;
+    }
+
+    .provider-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .provider {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+    }
+
+    .provider strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .provider.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .timeline {
+      display: grid;
+      gap: 12px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 10px;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      margin-top: 4px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    .dot.pending {
+      background: #c2c8d0;
+    }
+
+    .timeline-title {
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .timeline-copy {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .report-preview {
+      display: grid;
+      gap: 10px;
+    }
+
+    .report-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .status-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .status-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    @media (max-width: 1100px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        min-height: auto;
+      }
+
+      .overview,
+      .content {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <span>週報管理工具</span>
+      </div>
+      <div class="header-actions">
+        <button>測試執行</button>
+        <button class="primary">新增週報</button>
+      </div>
+    </header>
+
+    <main>
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <h2>報告任務</h2>
+          <span class="badge success">3 啟用中</span>
+        </div>
+        <div class="task-list">
+          <section class="task active">
+            <div class="task-title">
+              <span>AI 產業週報</span>
+              <span class="badge success">已排程</span>
+            </div>
+            <div class="meta">
+              <span>每週一 08:00</span>
+              <span>區間：最近 7 天</span>
+              <span>收件人：strategy@company.com</span>
+            </div>
+          </section>
+          <section class="task">
+            <div class="task-title">
+              <span>競品追蹤</span>
+              <span class="badge success">已排程</span>
+            </div>
+            <div class="meta">
+              <span>每週五 17:30</span>
+              <span>區間：本週</span>
+              <span>收件人：pm@company.com</span>
+            </div>
+          </section>
+          <section class="task">
+            <div class="task-title">
+              <span>法規監測</span>
+              <span class="badge warning">需確認</span>
+            </div>
+            <div class="meta">
+              <span>每月 1 日 09:00</span>
+              <span>區間：上個月</span>
+              <span>收件人：legal@company.com</span>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <div class="section-head">
+          <h2>AI 產業週報</h2>
+          <span class="badge success">下次執行：2026/05/25 08:00</span>
+        </div>
+
+        <div class="overview">
+          <div class="metric">
+            <div class="metric-label">研究提供者</div>
+            <div class="metric-value">OpenAI</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">最近執行</div>
+            <div class="metric-value">成功</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">研究耗時</div>
+            <div class="metric-value">18 分鐘</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">最近寄送</div>
+            <div class="metric-value">6 人</div>
+          </div>
+        </div>
+
+        <div class="content">
+          <article class="panel">
+            <div class="section-head">
+              <h2>任務設定</h2>
+              <button>儲存</button>
+            </div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <div class="field">
+                  <label>頻率</label>
+                  <select>
+                    <option>每週</option>
+                    <option>每月</option>
+                    <option>自訂</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>執行時間</label>
+                  <input value="每週一 08:00">
+                </div>
+                <div class="field">
+                  <label>資料區間</label>
+                  <select>
+                    <option>最近 7 天</option>
+                    <option>本週</option>
+                    <option>上週</option>
+                    <option>自訂日期</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>寄送對象</label>
+                  <input value="strategy@company.com">
+                </div>
+                <div class="field full">
+                  <label>Deep Research 提供者</label>
+                  <div class="provider-row">
+                    <div class="provider active">
+                      <strong>OpenAI Deep Research</strong>
+                      <span>適合長篇分析、引文清楚、可接內部資料</span>
+                    </div>
+                    <div class="provider">
+                      <strong>Gemini Deep Research</strong>
+                      <span>適合互動規劃、圖表輸出、Google 生態整合</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="field full">
+                  <label>完整提示詞</label>
+                  <textarea>請根據最近 7 天的公開資訊，整理生成式 AI 產業週報。內容需包含：
+1. 重要新聞與事件
+2. 主要公司動態
+3. 新產品與技術趨勢
+4. 市場訊號與潛在風險
+5. 對產品、投資與策略的建議
+
+請以繁體中文撰寫，使用清楚標題、條列、摘要與來源引用。</textarea>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div class="timeline">
+            <article class="panel">
+              <div class="section-head">
+                <h2>最近一次執行</h2>
+                <button>重新執行</button>
+              </div>
+              <div class="panel-body">
+                <div class="timeline-item">
+                  <div class="dot"></div>
+                  <div>
+                    <div class="timeline-title">研究完成</div>
+                    <div class="timeline-copy">已分析 126 個來源，產出完整報告與引用。</div>
+                  </div>
+                </div>
+                <div class="timeline-item">
+                  <div class="dot"></div>
+                  <div>
+                    <div class="timeline-title">Google Doc 已建立</div>
+                    <div class="timeline-copy">文件已依標題建立並寫入報告內容。</div>
+                  </div>
+                </div>
+                <div class="timeline-item">
+                  <div class="dot"></div>
+                  <div>
+                    <div class="timeline-title">Email 已寄送</div>
+                    <div class="timeline-copy">已寄送給 6 位收件人。</div>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="section-head">
+                <h2>輸出結果</h2>
+                <span class="badge success">已發布</span>
+              </div>
+              <div class="panel-body report-preview">
+                <a class="report-link" href="#">2026-W21 AI 產業週報</a>
+                <div class="status-list">
+                  <div class="status-row">
+                    <span>Google Doc</span>
+                    <strong>已建立</strong>
+                  </div>
+                  <div class="status-row">
+                    <span>Email</span>
+                    <strong>已寄送</strong>
+                  </div>
+                  <div class="status-row">
+                    <span>保留紀錄</span>
+                    <strong>30 天</strong>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
