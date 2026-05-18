@@ -43,6 +43,8 @@ http://localhost:8765
 - 研究提供者切換
 - 重新執行狀態模擬
 - Google Doc / Email 流程狀態區塊
+- 頁面版本號顯示
+- Deep Research 後端 API 雛形
 
 ## 後續可擴充
 
@@ -52,3 +54,7 @@ http://localhost:8765
 - Gemini Deep Research 串接
 - Google Docs API
 - Gmail API
+
+## API 雛形
+
+後端 API 測試方式請見 `API-TESTING.md`。

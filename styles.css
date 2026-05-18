@@ -45,6 +45,12 @@ header {
   font-weight: 700;
 }
 
+.app-version {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .brand-mark {
   width: 28px;
   height: 28px;
