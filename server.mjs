@@ -1,4 +1,5 @@
 import http from "node:http";
+import { readFile, writeFile } from "node:fs/promises";
 import { URL } from "node:url";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -7,7 +8,8 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || `http://localhost:${PORT}/auth/google/callback`;
-let googleTokens = null;
+const GOOGLE_TOKEN_FILE = process.env.GOOGLE_TOKEN_FILE || "./google-tokens.json";
+let googleTokens = await loadGoogleTokens();
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -17,6 +19,23 @@ function sendJson(res, statusCode, payload) {
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
   });
   res.end(JSON.stringify(payload));
+}
+
+async function loadGoogleTokens() {
+  try {
+    const file = await readFile(GOOGLE_TOKEN_FILE, "utf8");
+    return JSON.parse(file);
+  } catch {
+    return null;
+  }
+}
+
+async function persistGoogleTokens() {
+  if (!googleTokens) {
+    return;
+  }
+
+  await writeFile(GOOGLE_TOKEN_FILE, JSON.stringify(googleTokens, null, 2), "utf8");
 }
 
 async function readJson(req) {
@@ -220,6 +239,7 @@ async function exchangeGoogleCode(code) {
   }
 
   googleTokens = await response.json();
+  await persistGoogleTokens();
 }
 
 async function refreshGoogleAccessToken() {
@@ -249,6 +269,7 @@ async function refreshGoogleAccessToken() {
     ...googleTokens,
     ...refreshed,
   };
+  await persistGoogleTokens();
 }
 
 async function googleRequest(url, options = {}) {
@@ -291,28 +312,336 @@ async function createGoogleDoc(title, content) {
   }
 
   const document = await createResponse.json();
+  const rendered = renderMarkdownForDocs(content);
   const updateResponse = await googleRequest(`https://docs.googleapis.com/v1/documents/${document.documentId}:batchUpdate`, {
     method: "POST",
     body: JSON.stringify({
-      requests: [
-        {
-          insertText: {
-            location: { index: 1 },
-            text: content,
-          },
-        },
-      ],
+      requests: rendered.requests,
     }),
   });
 
   if (!updateResponse.ok) {
-    throw new Error(`Google Docs update failed: ${updateResponse.status}`);
+    const errorBody = await updateResponse.text();
+    throw new Error(`Google Docs update failed: ${updateResponse.status} ${errorBody}`);
+  }
+
+  if (rendered.tables.length > 0) {
+    await fillGoogleDocTables(document.documentId, rendered.tables);
   }
 
   return {
     documentId: document.documentId,
     url: `https://docs.google.com/document/d/${document.documentId}/edit`,
   };
+}
+
+function renderMarkdownForDocs(markdown) {
+  const lines = markdown.replaceAll("\r\n", "\n").split("\n");
+  const outputLines = [];
+  const paragraphStyles = [];
+  const bulletRanges = [];
+  const boldRanges = [];
+  const linkRanges = [];
+  const tableBlocks = [];
+  let cursor = 1;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const table = readMarkdownTable(lines, index);
+    if (table) {
+      tableBlocks.push({
+        startIndex: cursor,
+        rows: table.rows,
+      });
+      outputLines.push("");
+      cursor += 1;
+      index = table.endIndex;
+      continue;
+    }
+
+    const rawLine = lines[index];
+    const trimmed = rawLine.trimEnd();
+
+    if (/^---+$/.test(trimmed)) {
+      outputLines.push("");
+      cursor += 1;
+      continue;
+    }
+
+    const headingMatch = trimmed.match(/^(#{1,3})\s+(.*)$/);
+    const bulletMatch = trimmed.match(/^\s*[-*]\s+(.*)$/);
+    const orderedMatch = trimmed.match(/^\s*\d+\.\s+(.*)$/);
+
+    let text = trimmed;
+    let namedStyleType = "NORMAL_TEXT";
+    let bulletPreset = null;
+
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      text = headingMatch[2];
+      namedStyleType = level === 1 ? "TITLE" : level === 2 ? "HEADING_1" : "HEADING_2";
+    } else if (bulletMatch) {
+      text = bulletMatch[1];
+      bulletPreset = "BULLET_DISC_CIRCLE_SQUARE";
+    } else if (orderedMatch) {
+      text = orderedMatch[1];
+      bulletPreset = "NUMBERED_DECIMAL_ALPHA_ROMAN";
+    }
+
+    const cleaned = stripInlineMarkdown(text, cursor, boldRanges, linkRanges);
+    outputLines.push(cleaned);
+
+    const endIndex = cursor + cleaned.length + 1;
+
+    if (namedStyleType !== "NORMAL_TEXT" && cleaned.length > 0) {
+      paragraphStyles.push({
+        startIndex: cursor,
+        endIndex,
+        namedStyleType,
+      });
+    }
+
+    if (bulletPreset && cleaned.length > 0) {
+      bulletRanges.push({
+        startIndex: cursor,
+        endIndex,
+        bulletPreset,
+      });
+    }
+
+    cursor = endIndex;
+  }
+
+  const text = outputLines.join("\n");
+  const requests = [
+    {
+      insertText: {
+        location: { index: 1 },
+        text,
+      },
+    },
+    ...paragraphStyles.map((range) => ({
+      updateParagraphStyle: {
+        range: {
+          startIndex: range.startIndex,
+          endIndex: range.endIndex,
+        },
+        paragraphStyle: {
+          namedStyleType: range.namedStyleType,
+        },
+        fields: "namedStyleType",
+      },
+    })),
+    ...boldRanges.map((range) => ({
+      updateTextStyle: {
+        range: {
+          startIndex: range.startIndex,
+          endIndex: range.endIndex,
+        },
+        textStyle: {
+          bold: true,
+        },
+        fields: "bold",
+      },
+    })),
+    ...linkRanges.map((range) => ({
+      updateTextStyle: {
+        range: {
+          startIndex: range.startIndex,
+          endIndex: range.endIndex,
+        },
+        textStyle: {
+          link: {
+            url: range.url,
+          },
+        },
+        fields: "link",
+      },
+    })),
+    ...bulletRanges.map((range) => ({
+      createParagraphBullets: {
+        range: {
+          startIndex: range.startIndex,
+          endIndex: range.endIndex,
+        },
+        bulletPreset: range.bulletPreset,
+      },
+    })),
+    ...[...tableBlocks]
+      .sort((a, b) => b.startIndex - a.startIndex)
+      .map((table) => ({
+        insertTable: {
+          rows: table.rows.length,
+          columns: Math.max(...table.rows.map((row) => row.length)),
+          location: { index: table.startIndex },
+        },
+      })),
+  ];
+
+  return { text, requests, tables: tableBlocks };
+}
+
+function stripInlineMarkdown(text, lineStartIndex, boldRanges, linkRanges = []) {
+  let output = "";
+  let cursor = 0;
+  const boldPattern = /\*\*(.+?)\*\*/g;
+  let match;
+
+  while ((match = boldPattern.exec(text)) !== null) {
+    output += text.slice(cursor, match.index);
+    const boldText = match[1];
+    const startIndex = lineStartIndex + output.length;
+    output += boldText;
+    const endIndex = lineStartIndex + output.length;
+    boldRanges.push({ startIndex, endIndex });
+    cursor = match.index + match[0].length;
+  }
+
+  output += text.slice(cursor);
+  let rendered = "";
+  let renderedCursor = 0;
+  const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+  let linkMatch;
+
+  while ((linkMatch = linkPattern.exec(output)) !== null) {
+    rendered += output.slice(renderedCursor, linkMatch.index);
+    const label = linkMatch[1];
+    const startIndex = lineStartIndex + rendered.length;
+    rendered += label;
+    const endIndex = lineStartIndex + rendered.length;
+    linkRanges.push({
+      startIndex,
+      endIndex,
+      url: linkMatch[2],
+    });
+    renderedCursor = linkMatch.index + linkMatch[0].length;
+  }
+
+  rendered += output.slice(renderedCursor);
+
+  return rendered
+    .replace(/\[cite:\s*([0-9,\s]+)\]/g, "[$1]")
+    .replace(/`([^`]+)`/g, "$1");
+}
+
+function readMarkdownTable(lines, startIndex) {
+  const header = lines[startIndex];
+  const divider = lines[startIndex + 1];
+
+  if (!isTableRow(header) || !isDividerRow(divider)) {
+    return null;
+  }
+
+  const rows = [parseTableRow(header)];
+  let cursor = startIndex + 2;
+
+  while (cursor < lines.length && isTableRow(lines[cursor])) {
+    rows.push(parseTableRow(lines[cursor]));
+    cursor += 1;
+  }
+
+  return {
+    rows,
+    endIndex: cursor - 1,
+  };
+}
+
+function isTableRow(line = "") {
+  return /^\s*\|.*\|\s*$/.test(line);
+}
+
+function isDividerRow(line = "") {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function parseTableRow(line) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+async function fillGoogleDocTables(documentId, tables) {
+  const response = await googleRequest(`https://docs.googleapis.com/v1/documents/${documentId}`);
+  if (!response.ok) {
+    throw new Error(`Google Docs read failed: ${response.status}`);
+  }
+
+  const document = await response.json();
+  const documentTables = document.body.content
+    .filter((item) => item.table)
+    .sort((a, b) => a.startIndex - b.startIndex);
+
+  const requests = [];
+  const styleRequests = [];
+
+  documentTables.slice(-tables.length).forEach((item, tableIndex) => {
+    const sourceTable = tables[tableIndex];
+    item.table.tableRows.forEach((row, rowIndex) => {
+      row.tableCells.forEach((cell, columnIndex) => {
+        const rawText = sourceTable.rows[rowIndex]?.[columnIndex] || "";
+        const insertionIndex = cell.content?.[0]?.paragraph?.elements?.[0]?.startIndex;
+
+        if (rawText && insertionIndex) {
+          const localBoldRanges = [];
+          const localLinkRanges = [];
+          const text = stripInlineMarkdown(rawText, insertionIndex, localBoldRanges, localLinkRanges);
+          requests.push({
+            insertText: {
+              location: { index: insertionIndex },
+              text,
+            },
+          });
+          styleRequests.push(
+            ...localBoldRanges.map((range) => ({
+              updateTextStyle: {
+                range: {
+                  startIndex: range.startIndex,
+                  endIndex: range.endIndex,
+                },
+                textStyle: {
+                  bold: true,
+                },
+                fields: "bold",
+              },
+            })),
+            ...localLinkRanges.map((range) => ({
+              updateTextStyle: {
+                range: {
+                  startIndex: range.startIndex,
+                  endIndex: range.endIndex,
+                },
+                textStyle: {
+                  link: {
+                    url: range.url,
+                  },
+                },
+                fields: "link",
+              },
+            })),
+          );
+        }
+      });
+    });
+  });
+
+  requests.sort((a, b) => b.insertText.location.index - a.insertText.location.index);
+  styleRequests.sort((a, b) => b.updateTextStyle.range.startIndex - a.updateTextStyle.range.startIndex);
+
+  if (requests.length === 0) {
+    return;
+  }
+
+  const updateResponse = await googleRequest(`https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`, {
+    method: "POST",
+    body: JSON.stringify({ requests: [...requests, ...styleRequests] }),
+  });
+
+  if (!updateResponse.ok) {
+    const errorBody = await updateResponse.text();
+    throw new Error(`Google Docs table fill failed: ${updateResponse.status} ${errorBody}`);
+  }
 }
 
 function buildRawEmail({ to, subject, body }) {
@@ -433,6 +762,29 @@ const server = http.createServer(async (req, res) => {
       }
 
       const doc = await createGoogleDoc(title, content);
+      sendJson(res, 201, doc);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/docs/from-result-file") {
+      const body = await readJson(req);
+      const { filePath, title } = body;
+
+      if (!filePath) {
+        sendJson(res, 400, { error: "filePath is required" });
+        return;
+      }
+
+      const file = await readFile(filePath, "utf8");
+      const parsed = JSON.parse(file);
+      const report = parsed.report;
+
+      if (!report) {
+        sendJson(res, 400, { error: "report not found in result file" });
+        return;
+      }
+
+      const doc = await createGoogleDoc(title || "Renderer 測試文件", report);
       sendJson(res, 201, doc);
       return;
     }

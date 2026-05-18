@@ -64,3 +64,9 @@ http://localhost:8765
 Google Docs 授權與測試方式請見 `GOOGLE-DOCS-SETUP.md`。
 
 Email 測試方式請見 `EMAIL-TESTING.md`。
+
+Markdown renderer 測試方式請見 `MARKDOWN-RENDERER-TESTING.md`。
+
+若要直接用既有 `result.txt` 測試 renderer，請見 `RENDERER-FILE-TESTING.md`。
+
+本機半自動運作方式請見 `LOCAL-RUNBOOK.md`。
