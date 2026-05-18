@@ -1,9 +1,10 @@
-export const jobs = [
+export const seedJobs = [
   {
     id: "ai-weekly",
     name: "AI 產業週報",
     status: "已排程",
     statusTone: "success",
+    enabled: true,
     schedule: "每週一 08:00",
     frequency: "每週",
     range: "最近 7 天",
@@ -28,6 +29,7 @@ export const jobs = [
     name: "競品追蹤",
     status: "已排程",
     statusTone: "success",
+    enabled: true,
     schedule: "每週五 17:30",
     frequency: "每週",
     range: "本週",
@@ -46,6 +48,7 @@ export const jobs = [
     name: "法規監測",
     status: "需確認",
     statusTone: "warning",
+    enabled: true,
     schedule: "每月 1 日 09:00",
     frequency: "每月",
     range: "上個月",

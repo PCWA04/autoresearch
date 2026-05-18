@@ -1,7 +1,28 @@
-import { jobs, providers } from "./data.js";
+import { seedJobs, providers } from "./data.js";
+
+const STORAGE_KEY = "weekly-report-manager.jobs";
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function loadJobs() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? JSON.parse(stored) : clone(seedJobs);
+  } catch {
+    return clone(seedJobs);
+  }
+}
+
+function persistJobs() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(jobs));
+}
+
+let jobs = loadJobs();
 
 const state = {
-  selectedJobId: jobs[0].id,
+  selectedJobId: jobs[0]?.id ?? null,
   running: false,
   createOpen: false,
 };
@@ -25,19 +46,23 @@ function createId(name) {
   return `${base || "report"}-${Date.now()}`;
 }
 
+function enabledCount() {
+  return jobs.filter((job) => job.enabled !== false).length;
+}
+
 function renderSidebar(selectedJob) {
   return `
     <aside class="sidebar">
       <div class="sidebar-head">
         <h2>報告任務</h2>
-        ${badge(`${jobs.length} 啟用中`, "success")}
+        ${badge(`${enabledCount()} 啟用中`, "success")}
       </div>
       <div class="task-list">
         ${jobs.map((job) => `
           <button class="task ${job.id === selectedJob.id ? "active" : ""}" data-job-id="${job.id}">
             <div class="task-title">
               <span>${job.name}</span>
-              ${badge(job.status, job.statusTone)}
+              ${badge(job.enabled === false ? "已停用" : job.status, job.enabled === false ? "muted" : job.statusTone)}
             </div>
             <div class="meta">
               <span>${job.schedule}</span>
@@ -60,6 +85,15 @@ function renderProviderButtons(selectedJob) {
   `).join("");
 }
 
+function renderEmptyState() {
+  return `
+    <section class="workspace empty-state">
+      <h2>目前沒有週報任務</h2>
+      <p>先建立一筆任務，之後就能在這裡管理排程、提示詞與輸出狀態。</p>
+    </section>
+  `;
+}
+
 function renderWorkspace(selectedJob) {
   const runningTone = state.running ? "running" : "success";
   const runningLabel = state.running ? "執行中" : `下次執行：${selectedJob.nextRun}`;
@@ -68,7 +102,11 @@ function renderWorkspace(selectedJob) {
     <section class="workspace">
       <div class="section-head">
         <h2>${selectedJob.name}</h2>
-        ${badge(runningLabel, runningTone)}
+        <div class="inline-actions">
+          ${badge(runningLabel, runningTone)}
+          <button id="toggle-job">${selectedJob.enabled === false ? "啟用" : "停用"}</button>
+          <button id="delete-job">刪除</button>
+        </div>
       </div>
 
       <div class="overview">
@@ -94,36 +132,33 @@ function renderWorkspace(selectedJob) {
         <article class="panel">
           <div class="section-head">
             <h2>任務設定</h2>
-            <button>儲存</button>
+            <button id="save-job">儲存</button>
           </div>
           <div class="panel-body">
             <div class="form-grid">
+              <div class="field full">
+                <label for="edit-name">報告名稱</label>
+                <input id="edit-name" value="${selectedJob.name}">
+              </div>
               <div class="field">
-                <label>頻率</label>
-                <select>
-                  <option>${selectedJob.frequency}</option>
-                  <option>每週</option>
-                  <option>每月</option>
-                  <option>自訂</option>
+                <label for="edit-frequency">頻率</label>
+                <select id="edit-frequency">
+                  ${["每週", "每月", "自訂"].map((option) => `<option ${selectedJob.frequency === option ? "selected" : ""}>${option}</option>`).join("")}
                 </select>
               </div>
               <div class="field">
-                <label>執行時間</label>
-                <input value="${selectedJob.schedule}">
+                <label for="edit-schedule">執行時間</label>
+                <input id="edit-schedule" value="${selectedJob.schedule}">
               </div>
               <div class="field">
-                <label>資料區間</label>
-                <select>
-                  <option>${selectedJob.range}</option>
-                  <option>最近 7 天</option>
-                  <option>本週</option>
-                  <option>上週</option>
-                  <option>自訂日期</option>
+                <label for="edit-range">資料區間</label>
+                <select id="edit-range">
+                  ${["最近 7 天", "本週", "上週", "自訂日期"].map((option) => `<option ${selectedJob.range === option ? "selected" : ""}>${option}</option>`).join("")}
                 </select>
               </div>
               <div class="field">
-                <label>寄送對象</label>
-                <input value="${selectedJob.recipient}">
+                <label for="edit-recipient">寄送對象</label>
+                <input id="edit-recipient" value="${selectedJob.recipient}">
               </div>
               <div class="field full">
                 <label>Deep Research 提供者</label>
@@ -132,8 +167,8 @@ function renderWorkspace(selectedJob) {
                 </div>
               </div>
               <div class="field full">
-                <label>完整提示詞</label>
-                <textarea>${selectedJob.prompt}</textarea>
+                <label for="edit-prompt">完整提示詞</label>
+                <textarea id="edit-prompt">${selectedJob.prompt}</textarea>
               </div>
             </div>
           </div>
@@ -143,7 +178,7 @@ function renderWorkspace(selectedJob) {
           <article class="panel">
             <div class="section-head">
               <h2>最近一次執行</h2>
-              <button id="run-now" ${state.running ? "disabled" : ""}>${state.running ? "執行中..." : "重新執行"}</button>
+              <button id="run-now" ${state.running || selectedJob.enabled === false ? "disabled" : ""}>${state.running ? "執行中..." : "重新執行"}</button>
             </div>
             <div class="panel-body">
               <div class="timeline-item">
@@ -272,13 +307,13 @@ function render() {
           <span>週報管理工具</span>
         </div>
         <div class="header-actions">
-          <button id="test-run">測試執行</button>
+          <button id="test-run" ${selectedJob?.enabled === false ? "disabled" : ""}>測試執行</button>
           <button id="open-create" class="primary">新增週報</button>
         </div>
       </header>
       <main>
-        ${renderSidebar(selectedJob)}
-        ${renderWorkspace(selectedJob)}
+        ${selectedJob ? renderSidebar(selectedJob) : ""}
+        ${selectedJob ? renderWorkspace(selectedJob) : renderEmptyState()}
       </main>
     </div>
     ${renderCreateDialog()}
@@ -295,24 +330,31 @@ function render() {
   document.querySelectorAll("[data-provider]").forEach((button) => {
     button.addEventListener("click", () => {
       getSelectedJob().provider = button.dataset.provider;
+      persistJobs();
       render();
     });
-  });
-
-  document.querySelector("#run-now").addEventListener("click", () => {
-    state.running = true;
-    render();
-  });
-
-  document.querySelector("#test-run").addEventListener("click", () => {
-    state.running = true;
-    render();
   });
 
   document.querySelector("#open-create").addEventListener("click", () => {
     state.createOpen = true;
     render();
   });
+
+  if (selectedJob) {
+    document.querySelector("#run-now").addEventListener("click", () => {
+      state.running = true;
+      render();
+    });
+
+    document.querySelector("#test-run").addEventListener("click", () => {
+      state.running = true;
+      render();
+    });
+
+    document.querySelector("#save-job").addEventListener("click", handleSave);
+    document.querySelector("#toggle-job").addEventListener("click", handleToggle);
+    document.querySelector("#delete-job").addEventListener("click", handleDelete);
+  }
 
   if (state.createOpen) {
     document.querySelector("#close-create").addEventListener("click", closeCreateDialog);
@@ -343,6 +385,7 @@ function handleCreate(event) {
     name,
     status: "已排程",
     statusTone: "success",
+    enabled: true,
     schedule,
     frequency: formData.get("frequency"),
     range: formData.get("range"),
@@ -357,9 +400,40 @@ function handleCreate(event) {
   };
 
   jobs.push(newJob);
+  persistJobs();
   state.selectedJobId = newJob.id;
   state.running = false;
   state.createOpen = false;
+  render();
+}
+
+function handleSave() {
+  const selectedJob = getSelectedJob();
+  selectedJob.name = document.querySelector("#edit-name").value.trim();
+  selectedJob.frequency = document.querySelector("#edit-frequency").value;
+  selectedJob.schedule = document.querySelector("#edit-schedule").value.trim();
+  selectedJob.range = document.querySelector("#edit-range").value;
+  selectedJob.recipient = document.querySelector("#edit-recipient").value.trim();
+  selectedJob.prompt = document.querySelector("#edit-prompt").value.trim();
+  persistJobs();
+  render();
+}
+
+function handleToggle() {
+  const selectedJob = getSelectedJob();
+  selectedJob.enabled = selectedJob.enabled === false;
+  selectedJob.status = selectedJob.enabled ? "已排程" : "已停用";
+  selectedJob.statusTone = selectedJob.enabled ? "success" : "muted";
+  persistJobs();
+  render();
+}
+
+function handleDelete() {
+  const selectedJob = getSelectedJob();
+  jobs = jobs.filter((job) => job.id !== selectedJob.id);
+  persistJobs();
+  state.selectedJobId = jobs[0]?.id ?? null;
+  state.running = false;
   render();
 }
 
