@@ -191,6 +191,7 @@ function googleAuthUrl() {
     response_type: "code",
     scope: [
       "https://www.googleapis.com/auth/documents",
+      "https://www.googleapis.com/auth/gmail.send",
     ].join(" "),
     access_type: "offline",
     prompt: "consent",
@@ -314,6 +315,38 @@ async function createGoogleDoc(title, content) {
   };
 }
 
+function buildRawEmail({ to, subject, body }) {
+  const message = [
+    `To: ${to}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "MIME-Version: 1.0",
+    `Subject: ${subject}`,
+    "",
+    body,
+  ].join("\r\n");
+
+  return Buffer.from(message)
+    .toString("base64")
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+}
+
+async function sendGmail({ to, subject, body }) {
+  const response = await googleRequest("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    body: JSON.stringify({
+      raw: buildRawEmail({ to, subject, body }),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gmail send failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     sendJson(res, 204, {});
@@ -399,6 +432,27 @@ const server = http.createServer(async (req, res) => {
 
       const doc = await createGoogleDoc(title, content);
       sendJson(res, 201, doc);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/email") {
+      const body = await readJson(req);
+      const { to, subject, body: messageBody } = body;
+
+      if (!to || !subject || !messageBody) {
+        sendJson(res, 400, { error: "to, subject and body are required" });
+        return;
+      }
+
+      const message = await sendGmail({
+        to,
+        subject,
+        body: messageBody,
+      });
+      sendJson(res, 201, {
+        id: message.id,
+        threadId: message.threadId,
+      });
       return;
     }
 

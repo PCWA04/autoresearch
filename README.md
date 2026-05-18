@@ -46,6 +46,7 @@ http://localhost:8765
 - 頁面版本號顯示
 - Deep Research 後端 API 雛形
 - Google Docs 後端雛形
+- Gmail 寄送雛形
 
 ## 後續可擴充
 
@@ -61,3 +62,5 @@ http://localhost:8765
 後端 API 測試方式請見 `API-TESTING.md`。
 
 Google Docs 授權與測試方式請見 `GOOGLE-DOCS-SETUP.md`。
+
+Email 測試方式請見 `EMAIL-TESTING.md`。

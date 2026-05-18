@@ -1,9 +1,9 @@
-# Google Docs 串接設定
+# Google Docs 與 Gmail 串接設定
 
 ## 1. 建立 Google Cloud OAuth 憑證
 
 1. 到 Google Cloud Console 建立或選擇一個專案
-2. 啟用 Google Docs API
+2. 啟用 Google Docs API 與 Gmail API
 3. 建立 OAuth 2.0 Client ID
 4. 應用程式類型選 `Web application`
 5. Authorized redirect URI 設為：
@@ -28,7 +28,7 @@ $env:GOOGLE_REDIRECT_URI="http://localhost:8787/auth/google/callback"
 http://localhost:8787/auth/google/start
 ```
 
-完成 Google 授權後，後端就能建立文件。
+完成 Google 授權後，後端就能建立文件並寄送 Email。
 
 ## 4. 測試建立 Google Doc
 
