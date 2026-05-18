@@ -1,7 +1,8 @@
 import { seedJobs, providers } from "./data.js";
 
-const APP_VERSION = "v1.0";
+const APP_VERSION = "v1.1";
 const API_BASE_URL = "http://localhost:8787";
+const LEGACY_STORAGE_KEY = "weekly-report-manager.jobs";
 
 let jobs = [];
 
@@ -331,6 +332,7 @@ function renderCreateDialog() {
 
 function render() {
   const selectedJob = getSelectedJob();
+  const legacyJobs = getLegacyJobs();
   app.innerHTML = `
     <div class="app">
       <header>
@@ -340,6 +342,7 @@ function render() {
           <span class="app-version">${APP_VERSION}</span>
         </div>
         <div class="header-actions">
+          ${legacyJobs.length ? `<button id="import-legacy">匯入舊任務</button>` : ""}
           <button id="test-run" ${selectedJob?.enabled === false ? "disabled" : ""}>測試執行</button>
           <button id="open-create" class="primary">新增週報</button>
         </div>
@@ -376,6 +379,10 @@ function render() {
     render();
   });
 
+  if (legacyJobs.length) {
+    document.querySelector("#import-legacy").addEventListener("click", importLegacyJobs);
+  }
+
   if (selectedJob) {
     document.querySelector("#run-now").addEventListener("click", () => startResearch(selectedJob));
     document.querySelector("#test-run").addEventListener("click", () => startResearch(selectedJob));
@@ -393,6 +400,31 @@ function render() {
     document.querySelector("#cancel-create").addEventListener("click", closeCreateDialog);
     document.querySelector("#create-form").addEventListener("submit", handleCreate);
   }
+}
+
+function getLegacyJobs() {
+  try {
+    const stored = localStorage.getItem(LEGACY_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function importLegacyJobs() {
+  const legacyJobs = getLegacyJobs();
+  const existingIds = new Set(jobs.map((job) => job.id));
+  const jobsToImport = legacyJobs.filter((job) => !existingIds.has(job.id));
+
+  await Promise.all(jobsToImport.map((job) => fetch(`${API_BASE_URL}/api/jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(job),
+  })));
+
+  localStorage.removeItem(LEGACY_STORAGE_KEY);
+  await loadJobs();
+  render();
 }
 
 function closeCreateDialog() {
