@@ -763,7 +763,7 @@ const server = http.createServer(async (req, res) => {
       const id = url.pathname.split("/").pop();
       jobs = jobs.filter((job) => job.id !== id);
       await persistJobs();
-      sendJson(res, 204, {});
+      sendJson(res, 200, { ok: true, id });
       return;
     }
 
