@@ -1,30 +1,12 @@
 import { seedJobs, providers } from "./data.js";
 
-const STORAGE_KEY = "weekly-report-manager.jobs";
-const APP_VERSION = "v0.9";
+const APP_VERSION = "v1.0";
 const API_BASE_URL = "http://localhost:8787";
 
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function loadJobs() {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : clone(seedJobs);
-  } catch {
-    return clone(seedJobs);
-  }
-}
-
-function persistJobs() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(jobs));
-}
-
-let jobs = loadJobs();
+let jobs = [];
 
 const state = {
-  selectedJobId: jobs[0]?.id ?? null,
+  selectedJobId: null,
   running: false,
   createOpen: false,
   runStatus: null,
@@ -53,6 +35,39 @@ function createId(name) {
 
 function enabledCount() {
   return jobs.filter((job) => job.enabled !== false).length;
+}
+
+async function loadJobs() {
+  const response = await fetch(`${API_BASE_URL}/api/jobs`);
+  if (!response.ok) {
+    throw new Error(`載入任務失敗 (${response.status})`);
+  }
+
+  jobs = await response.json();
+  if (jobs.length === 0) {
+    jobs = seedJobs;
+    await Promise.all(jobs.map((job) => fetch(`${API_BASE_URL}/api/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(job),
+    })));
+  }
+
+  state.selectedJobId = state.selectedJobId && jobs.some((job) => job.id === state.selectedJobId)
+    ? state.selectedJobId
+    : jobs[0]?.id ?? null;
+}
+
+async function saveJob(job) {
+  const response = await fetch(`${API_BASE_URL}/api/jobs/${job.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(job),
+  });
+
+  if (!response.ok) {
+    throw new Error(`儲存任務失敗 (${response.status})`);
+  }
 }
 
 function renderSidebar(selectedJob) {
@@ -351,7 +366,7 @@ function render() {
   document.querySelectorAll("[data-provider]").forEach((button) => {
     button.addEventListener("click", () => {
       getSelectedJob().provider = button.dataset.provider;
-      persistJobs();
+      saveJob(getSelectedJob());
       render();
     });
   });
@@ -417,14 +432,14 @@ function handleCreate(event) {
   };
 
   jobs.push(newJob);
-  persistJobs();
+  await saveJob(newJob);
   state.selectedJobId = newJob.id;
   state.running = false;
   state.createOpen = false;
   render();
 }
 
-function handleSave() {
+async function handleSave() {
   const selectedJob = getSelectedJob();
   selectedJob.name = document.querySelector("#edit-name").value.trim();
   selectedJob.frequency = document.querySelector("#edit-frequency").value;
@@ -432,23 +447,23 @@ function handleSave() {
   selectedJob.range = document.querySelector("#edit-range").value;
   selectedJob.recipient = document.querySelector("#edit-recipient").value.trim();
   selectedJob.prompt = document.querySelector("#edit-prompt").value.trim();
-  persistJobs();
+  await saveJob(selectedJob);
   render();
 }
 
-function handleToggle() {
+async function handleToggle() {
   const selectedJob = getSelectedJob();
   selectedJob.enabled = selectedJob.enabled === false;
   selectedJob.status = selectedJob.enabled ? "已排程" : "已停用";
   selectedJob.statusTone = selectedJob.enabled ? "success" : "muted";
-  persistJobs();
+  await saveJob(selectedJob);
   render();
 }
 
-function handleDelete() {
+async function handleDelete() {
   const selectedJob = getSelectedJob();
+  await fetch(`${API_BASE_URL}/api/jobs/${selectedJob.id}`, { method: "DELETE" });
   jobs = jobs.filter((job) => job.id !== selectedJob.id);
-  persistJobs();
   state.selectedJobId = jobs[0]?.id ?? null;
   state.running = false;
   render();
@@ -469,7 +484,7 @@ async function startResearch(selectedJob) {
   state.runError = null;
   state.failedStep = null;
   selectedJob.lastRun = "執行中";
-  persistJobs();
+  await saveJob(selectedJob);
   render();
 
   try {
@@ -492,7 +507,7 @@ async function startResearch(selectedJob) {
     const run = await response.json();
     selectedJob.providerRunId = run.id;
     state.runStatus = "研究進行中";
-    persistJobs();
+    await saveJob(selectedJob);
     render();
     pollResearch(selectedJob, run.provider, run.id);
   } catch (error) {
@@ -524,7 +539,7 @@ async function pollResearch(selectedJob, provider, id) {
       selectedJob.reportTitle = `${selectedJob.name} - 最新報告`;
       selectedJob.duration = "已完成";
       state.runStatus = "建立 Google Doc 中";
-      persistJobs();
+      await saveJob(selectedJob);
       render();
       try {
         await createDocumentForReport(selectedJob);
@@ -533,12 +548,12 @@ async function pollResearch(selectedJob, provider, id) {
         state.runStatus = "Google Doc 建立失敗";
         state.runError = error.message;
         state.failedStep = "docs";
-        persistJobs();
+        await saveJob(selectedJob);
         render();
         return;
       }
       state.runStatus = "寄送 Email 中";
-      persistJobs();
+      await saveJob(selectedJob);
       render();
       try {
         await sendReportEmail(selectedJob);
@@ -547,11 +562,11 @@ async function pollResearch(selectedJob, provider, id) {
         state.runStatus = "Email 寄送失敗";
         state.runError = error.message;
         state.failedStep = "email";
-        persistJobs();
+        await saveJob(selectedJob);
         render();
         return;
       }
-      persistJobs();
+      await saveJob(selectedJob);
       render();
       return;
     }
@@ -576,7 +591,7 @@ async function pollResearch(selectedJob, provider, id) {
     state.runError = error.message;
     state.failedStep = "research";
     selectedJob.lastRun = "失敗";
-    persistJobs();
+    await saveJob(selectedJob);
     render();
   }
 }
@@ -646,7 +661,7 @@ async function retryFailedStep(selectedJob) {
       state.failedStep = null;
       state.runStatus = "研究完成";
       state.running = false;
-      persistJobs();
+      await saveJob(selectedJob);
       render();
     } catch (error) {
       state.running = false;
@@ -663,7 +678,7 @@ async function retryFailedStep(selectedJob) {
     try {
       await sendReportEmail(selectedJob);
       state.running = false;
-      persistJobs();
+      await saveJob(selectedJob);
       render();
     } catch (error) {
       state.running = false;
@@ -679,4 +694,8 @@ async function retryFailedStep(selectedJob) {
   await startResearch(selectedJob);
 }
 
-render();
+loadJobs()
+  .then(render)
+  .catch((error) => {
+    app.innerHTML = `<div class="empty-state"><h2>無法載入任務</h2><p>${error.message}</p></div>`;
+  });
