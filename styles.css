@@ -346,6 +346,24 @@ textarea {
   gap: 10px;
 }
 
+.report-body {
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.report-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .report-link {
   color: var(--accent);
   text-decoration: none;
