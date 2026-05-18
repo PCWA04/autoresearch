@@ -9,7 +9,9 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || `http://localhost:${PORT}/auth/google/callback`;
 const GOOGLE_TOKEN_FILE = process.env.GOOGLE_TOKEN_FILE || "./google-tokens.json";
+const JOBS_FILE = process.env.JOBS_FILE || "./jobs.json";
 let googleTokens = await loadGoogleTokens();
+let jobs = await loadJobs();
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -36,6 +38,19 @@ async function persistGoogleTokens() {
   }
 
   await writeFile(GOOGLE_TOKEN_FILE, JSON.stringify(googleTokens, null, 2), "utf8");
+}
+
+async function loadJobs() {
+  try {
+    const file = await readFile(JOBS_FILE, "utf8");
+    return JSON.parse(file);
+  } catch {
+    return [];
+  }
+}
+
+async function persistJobs() {
+  await writeFile(JOBS_FILE, JSON.stringify(jobs, null, 2), "utf8");
 }
 
 async function readJson(req) {
@@ -678,6 +693,30 @@ async function sendGmail({ to, subject, body }) {
   return response.json();
 }
 
+async function runJob(job) {
+  const run = job.provider === "gemini"
+    ? await startGeminiResearch(job.prompt)
+    : await startOpenAIResearch(job.prompt);
+
+  job.lastRun = "執行中";
+  job.providerRunId = run.id;
+  await persistJobs();
+  return run;
+}
+
+async function runEnabledJobsOnStartup() {
+  for (const job of jobs.filter((item) => item.enabled !== false)) {
+    try {
+      await runJob(job);
+    } catch (error) {
+      job.lastRun = "啟動失敗";
+      job.lastError = error.message;
+    }
+  }
+
+  await persistJobs();
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     sendJson(res, 204, {});
@@ -695,6 +734,36 @@ const server = http.createServer(async (req, res) => {
         googleConfigured: Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
         googleAuthorized: Boolean(googleTokens?.access_token),
       });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/jobs") {
+      sendJson(res, 200, jobs);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs") {
+      const body = await readJson(req);
+      jobs.push(body);
+      await persistJobs();
+      sendJson(res, 201, body);
+      return;
+    }
+
+    if (req.method === "PUT" && url.pathname.startsWith("/api/jobs/")) {
+      const id = url.pathname.split("/").pop();
+      const body = await readJson(req);
+      jobs = jobs.map((job) => job.id === id ? { ...job, ...body } : job);
+      await persistJobs();
+      sendJson(res, 200, jobs.find((job) => job.id === id));
+      return;
+    }
+
+    if (req.method === "DELETE" && url.pathname.startsWith("/api/jobs/")) {
+      const id = url.pathname.split("/").pop();
+      jobs = jobs.filter((job) => job.id !== id);
+      await persistJobs();
+      sendJson(res, 204, {});
       return;
     }
 
@@ -818,4 +887,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Research API listening on http://localhost:${PORT}`);
+  runEnabledJobsOnStartup().catch((error) => {
+    console.error("Startup jobs failed:", error);
+  });
 });

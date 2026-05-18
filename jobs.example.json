@@ -1,0 +1,20 @@
+[
+  {
+    "id": "ai-weekly",
+    "name": "AI 產業週報",
+    "status": "已排程",
+    "statusTone": "success",
+    "enabled": true,
+    "schedule": "每週一 08:00",
+    "frequency": "每週",
+    "range": "最近 7 天",
+    "recipient": "strategy@company.com",
+    "provider": "gemini",
+    "nextRun": "待計算",
+    "lastRun": "尚未執行",
+    "duration": "-",
+    "sentCount": 0,
+    "reportTitle": "尚未產生",
+    "prompt": "請整理最近 7 天生成式 AI 的重要發展。"
+  }
+]

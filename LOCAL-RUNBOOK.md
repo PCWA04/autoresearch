@@ -15,6 +15,8 @@ http://localhost:8787/auth/google/start
 
 完成授權後，token 會保存到 `google-tokens.json`。
 
+任務設定會保存到 `jobs.json`。
+
 ## 之後啟動
 
 直接執行：
@@ -26,6 +28,8 @@ http://localhost:8787/auth/google/start
 ## 目前已支援
 
 - Google token 重啟後保留
+- 任務設定由後端保存
+- 啟動後自動執行所有已啟用任務
 - Google Doc 建立失敗可單獨重試
 - Email 寄送失敗可單獨重試
 - 研究失敗時可重新執行研究
