@@ -1,6 +1,6 @@
 import { seedJobs, providers } from "./data.js";
 
-const APP_VERSION = "v1.1";
+const APP_VERSION = "v1.2";
 const API_BASE_URL = "http://localhost:8787";
 const LEGACY_STORAGE_KEY = "weekly-report-manager.jobs";
 
