@@ -1,7 +1,7 @@
 import { seedJobs, providers } from "./data.js";
 
 const STORAGE_KEY = "weekly-report-manager.jobs";
-const APP_VERSION = "v0.6";
+const APP_VERSION = "v0.7";
 const API_BASE_URL = "http://localhost:8787";
 
 function clone(value) {
@@ -217,7 +217,7 @@ function renderWorkspace(selectedJob) {
               ${badge(state.running ? "等待中" : "已發布", state.running ? "warning" : "success")}
             </div>
             <div class="panel-body report-preview">
-              <a class="report-link" href="#">${reportLinkLabel}</a>
+              <a class="report-link" href="${selectedJob.googleDocUrl || "#"}" ${selectedJob.googleDocUrl ? 'target="_blank" rel="noreferrer"' : ""}>${reportLinkLabel}</a>
               ${selectedJob.report ? `
                 <div class="report-meta">
                   <span>最新研究結果</span>
@@ -228,7 +228,7 @@ function renderWorkspace(selectedJob) {
               <div class="status-list">
                 <div class="status-row">
                   <span>Google Doc</span>
-                  <strong>${state.running ? "待建立" : "已建立"}</strong>
+                  <strong>${state.running ? "待建立" : selectedJob.googleDocUrl ? "已建立" : "待建立"}</strong>
                 </div>
                 <div class="status-row">
                   <span>Email</span>
@@ -513,6 +513,10 @@ async function pollResearch(selectedJob, provider, id) {
       selectedJob.report = result.report || "研究完成，但沒有回傳文字內容。";
       selectedJob.reportTitle = `${selectedJob.name} - 最新報告`;
       selectedJob.duration = "已完成";
+      state.runStatus = "建立 Google Doc 中";
+      persistJobs();
+      render();
+      await createDocumentForReport(selectedJob);
       persistJobs();
       render();
       return;
@@ -539,6 +543,29 @@ async function pollResearch(selectedJob, provider, id) {
     persistJobs();
     render();
   }
+}
+
+async function createDocumentForReport(selectedJob) {
+  const response = await fetch(`${API_BASE_URL}/api/docs`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      title: selectedJob.reportTitle,
+      content: selectedJob.report,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    throw new Error(errorBody.error || `建立 Google Doc 失敗 (${response.status})`);
+  }
+
+  const doc = await response.json();
+  selectedJob.googleDocId = doc.documentId;
+  selectedJob.googleDocUrl = doc.url;
+  state.runStatus = "研究完成";
 }
 
 render();
