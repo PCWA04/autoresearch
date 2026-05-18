@@ -31,7 +31,7 @@ http://localhost:8787/auth/google/start
 
 - Google token 重啟後保留
 - 任務設定由後端保存
-- 啟動後自動執行所有已啟用任務
+- 重啟後端不會自動執行任務
 - Google Doc 建立失敗可單獨重試
 - Email 寄送失敗可單獨重試
 - 研究失敗時可重新執行研究

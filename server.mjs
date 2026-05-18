@@ -704,18 +704,6 @@ async function runJob(job) {
   return run;
 }
 
-async function runEnabledJobsOnStartup() {
-  for (const job of jobs.filter((item) => item.enabled !== false)) {
-    try {
-      await runJob(job);
-    } catch (error) {
-      job.lastRun = "啟動失敗";
-      job.lastError = error.message;
-    }
-  }
-
-  await persistJobs();
-}
 
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
@@ -887,7 +875,4 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Research API listening on http://localhost:${PORT}`);
-  runEnabledJobsOnStartup().catch((error) => {
-    console.error("Startup jobs failed:", error);
-  });
 });
