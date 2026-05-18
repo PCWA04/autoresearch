@@ -1,6 +1,6 @@
 import { seedJobs, providers } from "./data.js";
 
-const APP_VERSION = "v1.2";
+const APP_VERSION = "v1.4";
 const API_BASE_URL = "http://localhost:8787";
 const LEGACY_STORAGE_KEY = "weekly-report-manager.jobs";
 
@@ -68,6 +68,18 @@ async function saveJob(job) {
 
   if (!response.ok) {
     throw new Error(`儲存任務失敗 (${response.status})`);
+  }
+}
+
+async function createJob(job) {
+  const response = await fetch(`${API_BASE_URL}/api/jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(job),
+  });
+
+  if (!response.ok) {
+    throw new Error(`新增任務失敗 (${response.status})`);
   }
 }
 
@@ -463,8 +475,8 @@ async function handleCreate(event) {
     prompt,
   };
 
+  await createJob(newJob);
   jobs.push(newJob);
-  await saveJob(newJob);
   state.selectedJobId = newJob.id;
   state.running = false;
   state.createOpen = false;
@@ -498,8 +510,7 @@ async function handleDelete() {
   if (!response.ok) {
     throw new Error(`刪除任務失敗 (${response.status})`);
   }
-  jobs = jobs.filter((job) => job.id !== selectedJob.id);
-  state.selectedJobId = jobs[0]?.id ?? null;
+  await loadJobs();
   state.running = false;
   render();
 }
