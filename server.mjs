@@ -316,11 +316,12 @@ async function createGoogleDoc(title, content) {
 }
 
 function buildRawEmail({ to, subject, body }) {
+  const encodedSubject = `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
   const message = [
     `To: ${to}`,
     "Content-Type: text/plain; charset=UTF-8",
     "MIME-Version: 1.0",
-    `Subject: ${subject}`,
+    `Subject: ${encodedSubject}`,
     "",
     body,
   ].join("\r\n");
@@ -341,7 +342,8 @@ async function sendGmail({ to, subject, body }) {
   });
 
   if (!response.ok) {
-    throw new Error(`Gmail send failed: ${response.status}`);
+    const errorBody = await response.text();
+    throw new Error(`Gmail send failed: ${response.status} ${errorBody}`);
   }
 
   return response.json();
