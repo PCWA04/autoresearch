@@ -1,7 +1,7 @@
 import { seedJobs, providers } from "./data.js";
 
 const STORAGE_KEY = "weekly-report-manager.jobs";
-const APP_VERSION = "v0.8";
+const APP_VERSION = "v0.9";
 const API_BASE_URL = "http://localhost:8787";
 
 function clone(value) {
@@ -29,6 +29,7 @@ const state = {
   createOpen: false,
   runStatus: null,
   runError: null,
+  failedStep: null,
 };
 
 const app = document.querySelector("#app");
@@ -184,7 +185,10 @@ function renderWorkspace(selectedJob) {
           <article class="panel">
             <div class="section-head">
               <h2>最近一次執行</h2>
-              <button id="run-now" ${state.running || selectedJob.enabled === false ? "disabled" : ""}>${state.running ? "執行中..." : "重新執行"}</button>
+              <div class="inline-actions">
+                ${state.failedStep ? `<button id="retry-step">重試失敗步驟</button>` : ""}
+                <button id="run-now" ${state.running || selectedJob.enabled === false ? "disabled" : ""}>${state.running ? "執行中..." : "重新執行"}</button>
+              </div>
             </div>
             <div class="panel-body">
               <div class="timeline-item">
@@ -339,6 +343,7 @@ function render() {
       state.running = false;
       state.runStatus = null;
       state.runError = null;
+      state.failedStep = null;
       render();
     });
   });
@@ -359,6 +364,9 @@ function render() {
   if (selectedJob) {
     document.querySelector("#run-now").addEventListener("click", () => startResearch(selectedJob));
     document.querySelector("#test-run").addEventListener("click", () => startResearch(selectedJob));
+    if (state.failedStep) {
+      document.querySelector("#retry-step").addEventListener("click", () => retryFailedStep(selectedJob));
+    }
 
     document.querySelector("#save-job").addEventListener("click", handleSave);
     document.querySelector("#toggle-job").addEventListener("click", handleToggle);
@@ -459,6 +467,7 @@ async function startResearch(selectedJob) {
   state.running = true;
   state.runStatus = "建立研究任務中";
   state.runError = null;
+  state.failedStep = null;
   selectedJob.lastRun = "執行中";
   persistJobs();
   render();
@@ -490,6 +499,7 @@ async function startResearch(selectedJob) {
     state.running = false;
     state.runStatus = "執行失敗";
     state.runError = error.message;
+    state.failedStep = "research";
     selectedJob.lastRun = "失敗";
     persistJobs();
     render();
@@ -516,11 +526,31 @@ async function pollResearch(selectedJob, provider, id) {
       state.runStatus = "建立 Google Doc 中";
       persistJobs();
       render();
-      await createDocumentForReport(selectedJob);
+      try {
+        await createDocumentForReport(selectedJob);
+      } catch (error) {
+        state.running = false;
+        state.runStatus = "Google Doc 建立失敗";
+        state.runError = error.message;
+        state.failedStep = "docs";
+        persistJobs();
+        render();
+        return;
+      }
       state.runStatus = "寄送 Email 中";
       persistJobs();
       render();
-      await sendReportEmail(selectedJob);
+      try {
+        await sendReportEmail(selectedJob);
+      } catch (error) {
+        state.running = false;
+        state.runStatus = "Email 寄送失敗";
+        state.runError = error.message;
+        state.failedStep = "email";
+        persistJobs();
+        render();
+        return;
+      }
       persistJobs();
       render();
       return;
@@ -530,6 +560,7 @@ async function pollResearch(selectedJob, provider, id) {
       state.running = false;
       state.runStatus = "執行失敗";
       state.runError = `研究任務狀態：${result.status}`;
+      state.failedStep = "research";
       selectedJob.lastRun = "失敗";
       persistJobs();
       render();
@@ -543,6 +574,7 @@ async function pollResearch(selectedJob, provider, id) {
     state.running = false;
     state.runStatus = "查詢失敗";
     state.runError = error.message;
+    state.failedStep = "research";
     selectedJob.lastRun = "失敗";
     persistJobs();
     render();
@@ -599,6 +631,52 @@ async function sendReportEmail(selectedJob) {
   selectedJob.emailSentAt = new Date().toISOString();
   selectedJob.sentCount = 1;
   state.runStatus = "研究完成";
+  state.failedStep = null;
+}
+
+async function retryFailedStep(selectedJob) {
+  state.runError = null;
+  state.running = true;
+
+  if (state.failedStep === "docs") {
+    state.runStatus = "重新建立 Google Doc 中";
+    render();
+    try {
+      await createDocumentForReport(selectedJob);
+      state.failedStep = null;
+      state.runStatus = "研究完成";
+      state.running = false;
+      persistJobs();
+      render();
+    } catch (error) {
+      state.running = false;
+      state.runStatus = "Google Doc 建立失敗";
+      state.runError = error.message;
+      render();
+    }
+    return;
+  }
+
+  if (state.failedStep === "email") {
+    state.runStatus = "重新寄送 Email 中";
+    render();
+    try {
+      await sendReportEmail(selectedJob);
+      state.running = false;
+      persistJobs();
+      render();
+    } catch (error) {
+      state.running = false;
+      state.runStatus = "Email 寄送失敗";
+      state.runError = error.message;
+      render();
+    }
+    return;
+  }
+
+  state.running = false;
+  state.failedStep = null;
+  await startResearch(selectedJob);
 }
 
 render();
