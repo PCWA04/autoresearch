@@ -3,6 +3,7 @@ import { jobs, providers } from "./data.js";
 const state = {
   selectedJobId: jobs[0].id,
   running: false,
+  createOpen: false,
 };
 
 const app = document.querySelector("#app");
@@ -15,12 +16,21 @@ function badge(label, tone) {
   return `<span class="badge ${tone}">${label}</span>`;
 }
 
+function createId(name) {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^\w-]/g, "");
+  return `${base || "report"}-${Date.now()}`;
+}
+
 function renderSidebar(selectedJob) {
   return `
     <aside class="sidebar">
       <div class="sidebar-head">
         <h2>報告任務</h2>
-        ${badge("3 啟用中", "success")}
+        ${badge(`${jobs.length} 啟用中`, "success")}
       </div>
       <div class="task-list">
         ${jobs.map((job) => `
@@ -91,6 +101,7 @@ function renderWorkspace(selectedJob) {
               <div class="field">
                 <label>頻率</label>
                 <select>
+                  <option>${selectedJob.frequency}</option>
                   <option>每週</option>
                   <option>每月</option>
                   <option>自訂</option>
@@ -188,6 +199,69 @@ function renderWorkspace(selectedJob) {
   `;
 }
 
+function renderCreateDialog() {
+  if (!state.createOpen) {
+    return "";
+  }
+
+  return `
+    <div class="modal-backdrop">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="create-title">
+        <div class="section-head">
+          <h2 id="create-title">新增週報</h2>
+          <button id="close-create">關閉</button>
+        </div>
+        <form id="create-form" class="panel-body form-grid">
+          <div class="field full">
+            <label for="job-name">報告名稱</label>
+            <input id="job-name" name="name" required placeholder="例如：市場情報週報">
+          </div>
+          <div class="field">
+            <label for="job-frequency">頻率</label>
+            <select id="job-frequency" name="frequency">
+              <option>每週</option>
+              <option>每月</option>
+              <option>自訂</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="job-schedule">執行時間</label>
+            <input id="job-schedule" name="schedule" required placeholder="例如：每週一 08:00">
+          </div>
+          <div class="field">
+            <label for="job-range">資料區間</label>
+            <select id="job-range" name="range">
+              <option>最近 7 天</option>
+              <option>本週</option>
+              <option>上週</option>
+              <option>自訂日期</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="job-recipient">寄送對象</label>
+            <input id="job-recipient" name="recipient" type="email" required placeholder="team@company.com">
+          </div>
+          <div class="field full">
+            <label for="job-provider">Deep Research 提供者</label>
+            <select id="job-provider" name="provider">
+              <option value="openai">OpenAI Deep Research</option>
+              <option value="gemini">Gemini Deep Research</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label for="job-prompt">完整提示詞</label>
+            <textarea id="job-prompt" name="prompt" required placeholder="輸入你希望研究引擎遵循的完整提示詞"></textarea>
+          </div>
+          <div class="modal-actions full">
+            <button type="button" id="cancel-create">取消</button>
+            <button class="primary" type="submit">建立週報</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  `;
+}
+
 function render() {
   const selectedJob = getSelectedJob();
   app.innerHTML = `
@@ -199,7 +273,7 @@ function render() {
         </div>
         <div class="header-actions">
           <button id="test-run">測試執行</button>
-          <button class="primary">新增週報</button>
+          <button id="open-create" class="primary">新增週報</button>
         </div>
       </header>
       <main>
@@ -207,6 +281,7 @@ function render() {
         ${renderWorkspace(selectedJob)}
       </main>
     </div>
+    ${renderCreateDialog()}
   `;
 
   document.querySelectorAll("[data-job-id]").forEach((button) => {
@@ -233,6 +308,59 @@ function render() {
     state.running = true;
     render();
   });
+
+  document.querySelector("#open-create").addEventListener("click", () => {
+    state.createOpen = true;
+    render();
+  });
+
+  if (state.createOpen) {
+    document.querySelector("#close-create").addEventListener("click", closeCreateDialog);
+    document.querySelector("#cancel-create").addEventListener("click", closeCreateDialog);
+    document.querySelector("#create-form").addEventListener("submit", handleCreate);
+  }
+}
+
+function closeCreateDialog() {
+  state.createOpen = false;
+  render();
+}
+
+function handleCreate(event) {
+  event.preventDefault();
+  const formData = new FormData(event.currentTarget);
+  const name = formData.get("name").trim();
+  const schedule = formData.get("schedule").trim();
+  const recipient = formData.get("recipient").trim();
+  const prompt = formData.get("prompt").trim();
+
+  if (!name || !schedule || !recipient || !prompt) {
+    return;
+  }
+
+  const newJob = {
+    id: createId(name),
+    name,
+    status: "已排程",
+    statusTone: "success",
+    schedule,
+    frequency: formData.get("frequency"),
+    range: formData.get("range"),
+    recipient,
+    provider: formData.get("provider"),
+    nextRun: "待計算",
+    lastRun: "尚未執行",
+    duration: "-",
+    sentCount: 0,
+    reportTitle: "尚未產生",
+    prompt,
+  };
+
+  jobs.push(newJob);
+  state.selectedJobId = newJob.id;
+  state.running = false;
+  state.createOpen = false;
+  render();
 }
 
 render();
