@@ -45,6 +45,7 @@ http://localhost:8765
 - Google Doc / Email 流程狀態區塊
 - 頁面版本號顯示
 - Deep Research 後端 API 雛形
+- Google Docs 後端雛形
 
 ## 後續可擴充
 
@@ -58,3 +59,5 @@ http://localhost:8765
 ## API 雛形
 
 後端 API 測試方式請見 `API-TESTING.md`。
+
+Google Docs 授權與測試方式請見 `GOOGLE-DOCS-SETUP.md`。
