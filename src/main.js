@@ -1,7 +1,8 @@
 import { seedJobs, providers } from "./data.js";
 
 const STORAGE_KEY = "weekly-report-manager.jobs";
-const APP_VERSION = "v0.4";
+const APP_VERSION = "v0.6";
+const API_BASE_URL = "http://localhost:8787";
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -26,6 +27,8 @@ const state = {
   selectedJobId: jobs[0]?.id ?? null,
   running: false,
   createOpen: false,
+  runStatus: null,
+  runError: null,
 };
 
 const app = document.querySelector("#app");
@@ -98,6 +101,8 @@ function renderEmptyState() {
 function renderWorkspace(selectedJob) {
   const runningTone = state.running ? "running" : "success";
   const runningLabel = state.running ? "執行中" : `下次執行：${selectedJob.nextRun}`;
+  const runStatusLabel = state.runStatus || (state.running ? "研究進行中" : "研究完成");
+  const reportLinkLabel = selectedJob.reportTitle;
 
   return `
     <section class="workspace">
@@ -185,8 +190,8 @@ function renderWorkspace(selectedJob) {
               <div class="timeline-item">
                 <div class="dot ${state.running ? "pending" : ""}"></div>
                 <div>
-                  <div class="timeline-title">${state.running ? "研究進行中" : "研究完成"}</div>
-                  <div class="timeline-copy">${state.running ? "系統正在呼叫 Deep Research，完成後會自動整理報告。" : "已分析 126 個來源，產出完整報告與引用。"}</div>
+                  <div class="timeline-title">${runStatusLabel}</div>
+                  <div class="timeline-copy">${state.runError ? state.runError : state.running ? "系統正在呼叫 Deep Research，完成後會自動整理報告。" : "已分析 126 個來源，產出完整報告與引用。"}</div>
                 </div>
               </div>
               <div class="timeline-item">
@@ -212,7 +217,14 @@ function renderWorkspace(selectedJob) {
               ${badge(state.running ? "等待中" : "已發布", state.running ? "warning" : "success")}
             </div>
             <div class="panel-body report-preview">
-              <a class="report-link" href="#">${selectedJob.reportTitle}</a>
+              <a class="report-link" href="#">${reportLinkLabel}</a>
+              ${selectedJob.report ? `
+                <div class="report-meta">
+                  <span>最新研究結果</span>
+                  <strong>${selectedJob.provider === "gemini" ? "Gemini" : "OpenAI"}</strong>
+                </div>
+                <div class="report-body">${escapeHtml(selectedJob.report)}</div>
+              ` : ""}
               <div class="status-list">
                 <div class="status-row">
                   <span>Google Doc</span>
@@ -325,6 +337,8 @@ function render() {
     button.addEventListener("click", () => {
       state.selectedJobId = button.dataset.jobId;
       state.running = false;
+      state.runStatus = null;
+      state.runError = null;
       render();
     });
   });
@@ -343,15 +357,8 @@ function render() {
   });
 
   if (selectedJob) {
-    document.querySelector("#run-now").addEventListener("click", () => {
-      state.running = true;
-      render();
-    });
-
-    document.querySelector("#test-run").addEventListener("click", () => {
-      state.running = true;
-      render();
-    });
+    document.querySelector("#run-now").addEventListener("click", () => startResearch(selectedJob));
+    document.querySelector("#test-run").addEventListener("click", () => startResearch(selectedJob));
 
     document.querySelector("#save-job").addEventListener("click", handleSave);
     document.querySelector("#toggle-job").addEventListener("click", handleToggle);
@@ -437,6 +444,101 @@ function handleDelete() {
   state.selectedJobId = jobs[0]?.id ?? null;
   state.running = false;
   render();
+}
+
+function escapeHtml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+async function startResearch(selectedJob) {
+  state.running = true;
+  state.runStatus = "建立研究任務中";
+  state.runError = null;
+  selectedJob.lastRun = "執行中";
+  persistJobs();
+  render();
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/research/start`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        provider: selectedJob.provider,
+        prompt: selectedJob.prompt,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(errorBody.error || `建立任務失敗 (${response.status})`);
+    }
+
+    const run = await response.json();
+    selectedJob.providerRunId = run.id;
+    state.runStatus = "研究進行中";
+    persistJobs();
+    render();
+    pollResearch(selectedJob, run.provider, run.id);
+  } catch (error) {
+    state.running = false;
+    state.runStatus = "執行失敗";
+    state.runError = error.message;
+    selectedJob.lastRun = "失敗";
+    persistJobs();
+    render();
+  }
+}
+
+async function pollResearch(selectedJob, provider, id) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/research/${provider}/${id}`);
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(errorBody.error || `查詢任務失敗 (${response.status})`);
+    }
+
+    const result = await response.json();
+
+    if (result.status === "completed") {
+      state.running = false;
+      state.runStatus = "研究完成";
+      selectedJob.lastRun = "成功";
+      selectedJob.report = result.report || "研究完成，但沒有回傳文字內容。";
+      selectedJob.reportTitle = `${selectedJob.name} - 最新報告`;
+      selectedJob.duration = "已完成";
+      persistJobs();
+      render();
+      return;
+    }
+
+    if (["failed", "cancelled", "incomplete"].includes(result.status)) {
+      state.running = false;
+      state.runStatus = "執行失敗";
+      state.runError = `研究任務狀態：${result.status}`;
+      selectedJob.lastRun = "失敗";
+      persistJobs();
+      render();
+      return;
+    }
+
+    state.runStatus = `研究進行中 (${result.status})`;
+    render();
+    window.setTimeout(() => pollResearch(selectedJob, provider, id), 10000);
+  } catch (error) {
+    state.running = false;
+    state.runStatus = "查詢失敗";
+    state.runError = error.message;
+    selectedJob.lastRun = "失敗";
+    persistJobs();
+    render();
+  }
 }
 
 render();
