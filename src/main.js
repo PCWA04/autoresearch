@@ -1,6 +1,7 @@
 import { seedJobs, providers } from "./data.js";
 
 const STORAGE_KEY = "weekly-report-manager.jobs";
+const APP_VERSION = "v0.4";
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -305,6 +306,7 @@ function render() {
         <div class="brand">
           <div class="brand-mark">R</div>
           <span>週報管理工具</span>
+          <span class="app-version">${APP_VERSION}</span>
         </div>
         <div class="header-actions">
           <button id="test-run" ${selectedJob?.enabled === false ? "disabled" : ""}>測試執行</button>
