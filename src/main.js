@@ -432,7 +432,7 @@ function closeCreateDialog() {
   render();
 }
 
-function handleCreate(event) {
+async function handleCreate(event) {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
   const name = formData.get("name").trim();
@@ -548,7 +548,7 @@ async function startResearch(selectedJob) {
     state.runError = error.message;
     state.failedStep = "research";
     selectedJob.lastRun = "失敗";
-    persistJobs();
+    await saveJob(selectedJob);
     render();
   }
 }
@@ -609,7 +609,7 @@ async function pollResearch(selectedJob, provider, id) {
       state.runError = `研究任務狀態：${result.status}`;
       state.failedStep = "research";
       selectedJob.lastRun = "失敗";
-      persistJobs();
+      await saveJob(selectedJob);
       render();
       return;
     }
